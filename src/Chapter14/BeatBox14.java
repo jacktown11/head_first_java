@@ -1,0 +1,220 @@
+package Chapter14;
+
+import javax.swing.*;
+import java.awt.*;
+import java.awt.event.*;
+import java.io.ObjectOutputStream;
+import java.util.*;
+import javax.sound.midi.*;
+import java.io.*;
+
+public class BeatBox14 {
+	JPanel mainPanel;
+	ArrayList<JCheckBox> checkboxList;
+	Sequencer sqr;
+	Sequence sq;
+	Track track;
+	JFrame fr;
+
+	String[] instrumentNames = { "Bass Drum", "Closed Hi-Hat", "Open Hi-Hat", "Acoustic Snare", "Crash Cymbal",
+			"Hand Clap", "High Tom", "Hi Bango", "Maracas", "Whistle", "Low Conga", "Cowbell", "Vibraslap",
+			"Low-mid Tom", "High Agogo", "Open High Conga" };
+	int[] instruments = { 35, 42, 46, 38, 49, 39, 50, 60, 70, 72, 64, 56, 58, 47, 67, 63 };
+
+	public static void main(String[] args) {
+		new BeatBox14().buildGUI();
+	}
+
+	public void buildGUI() {
+		fr = new JFrame("Cyber BeatBox");
+		fr.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+		BorderLayout layout = new BorderLayout();
+		JPanel background = new JPanel(layout);
+		background.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+		// build buttons and put them into box
+		Box buttonBox = new Box(BoxLayout.Y_AXIS);
+
+		JButton start = new JButton("Start");
+		start.addActionListener(new MyStartMidiListener());
+		buttonBox.add(start);
+
+		JButton stop = new JButton("Stop");
+		stop.addActionListener(new MyStopMidiListener());
+		buttonBox.add(stop);
+
+		JButton upTempo = new JButton("Tempo Up");
+		upTempo.addActionListener(new MyUpTempoMidiListener());
+		buttonBox.add(upTempo);
+
+		JButton downTempo = new JButton("Tempo Down");
+		downTempo.addActionListener(new MyDownTempoMidiListener());
+		buttonBox.add(downTempo);
+
+		JButton serialize = new JButton("serialize");
+		serialize.addActionListener(new MySendListener());
+		buttonBox.add(serialize);
+
+		JButton restore = new JButton("restore");
+		restore.addActionListener(new MyReadInListener());
+		buttonBox.add(restore);
+
+		// build labels for instrumentNames and put them into box
+		Box nameBox = new Box(BoxLayout.Y_AXIS);
+		for (int i = 0; i < instrumentNames.length; i++) {
+			nameBox.add(new Label(instrumentNames[i]));
+		}
+
+		// build checkboxes and put them into grid
+		checkboxList = new ArrayList<JCheckBox>();
+		GridLayout grid = new GridLayout(16, 16);
+		grid.setVgap(1);
+		grid.setHgap(2);
+		mainPanel = new JPanel(grid);
+		for (int i = 0; i < 256; i++) {
+			JCheckBox c = new JCheckBox();
+			c.setSelected(false);
+			checkboxList.add(c);
+			mainPanel.add(c);
+		}
+		// locate sections
+		background.add(BorderLayout.WEST, nameBox);
+		background.add(BorderLayout.EAST, buttonBox);
+		background.add(BorderLayout.CENTER, mainPanel);
+		fr.getContentPane().add(background);
+
+		setUpMidi();
+
+		fr.setBounds(50, 50, 300, 300);
+		fr.pack();
+		fr.setVisible(true);
+	}
+
+	public void setUpMidi() {
+		try {
+			sqr = MidiSystem.getSequencer();
+			sqr.open();
+			sq = new Sequence(Sequence.PPQ, 4);
+			track = sq.createTrack();
+			sqr.setTempoInBPM(120);
+		} catch (Exception ex) {
+			ex.printStackTrace();
+		}
+	}
+
+	public void buildTrackAndStart() {
+		int[] trackList = null;
+		sq.deleteTrack(track);
+		track = sq.createTrack();
+		for (int i = 0; i < 16; i++) {
+			trackList = new int[16];
+			int key = instruments[i];
+			for (int j = 0; j < 16; j++) {
+				JCheckBox jc = (JCheckBox) checkboxList.get(j + 16 * i);
+				if (jc.isSelected()) {
+					trackList[j] = key;
+				} else {
+					trackList[j] = 0;
+				}
+			}
+			makeTracks(trackList);
+			track.add(makeEvent(176, 1, 127, 0, 16));
+		}
+		track.add(makeEvent(192, 9, 1, 0, 15));
+		try {
+			sqr.setSequence(sq);
+			sqr.setLoopCount(Sequencer.LOOP_CONTINUOUSLY);
+			sqr.start();
+			sqr.setTempoInBPM(120);
+		} catch (Exception ex) {
+			ex.printStackTrace();
+		}
+	}
+
+	public void makeTracks(int[] list) {
+		for (int i = 0; i < 16; i++) {
+			int key = list[i];
+			if (key != 0) {
+				track.add(makeEvent(144, 9, key, 100, i));
+				track.add(makeEvent(128, 9, key, 100, i + 1));
+			}
+		}
+	}
+
+	public MidiEvent makeEvent(int comd, int chan, int one, int two, int tick) {
+		MidiEvent event = null;
+		try {
+			ShortMessage a = new ShortMessage();
+			a.setMessage(comd, chan, one, two);
+			event = new MidiEvent(a, tick);
+		} catch (Exception ex) {
+		}
+		return event;
+	}
+
+	public class MyStartMidiListener implements ActionListener {
+		public void actionPerformed(ActionEvent event) {
+			System.out.println("start");
+			buildTrackAndStart();
+		}
+	}
+
+	public class MyStopMidiListener implements ActionListener {
+		public void actionPerformed(ActionEvent event) {
+			System.out.println("stop");
+			sqr.stop();
+		}
+	}
+
+	public class MyUpTempoMidiListener implements ActionListener {
+		public void actionPerformed(ActionEvent event) {
+			float tempoFactor = sqr.getTempoFactor();
+			sqr.setTempoFactor((float) (tempoFactor * 1.03));
+		}
+	}
+
+	public class MyDownTempoMidiListener implements ActionListener {
+		public void actionPerformed(ActionEvent event) {
+			float tempoFactor = sqr.getTempoFactor();
+			sqr.setTempoFactor((float) (tempoFactor * 0.97));
+		}
+	}
+
+	public class MySendListener implements ActionListener {
+		public void actionPerformed(ActionEvent event) {
+			boolean[] checkboxState = new boolean[256];
+			for (int i = 0; i < checkboxList.size(); i++) {
+				if (checkboxList.get(i).isSelected()) {
+					checkboxState[i] = true;
+				}
+			}
+			try {
+				FileOutputStream fos = new FileOutputStream("checkboxState.ser");
+				ObjectOutputStream oos = new ObjectOutputStream(fos);
+				oos.writeObject(checkboxState);
+				oos.close();
+			} catch (Exception ex) {
+				ex.printStackTrace();
+			}
+		}
+	}
+
+	public class MyReadInListener implements ActionListener {
+		public void actionPerformed(ActionEvent event) {
+			boolean[] checkboxState = null;
+			try {
+				FileInputStream fis = new FileInputStream("checkboxState.ser");
+				ObjectInputStream ois = new ObjectInputStream(fis);
+				checkboxState = (boolean[]) ois.readObject();
+				ois.close();
+			}catch(Exception ex) {
+				ex.printStackTrace();
+			}
+			for(int i = 0; i < checkboxList.size(); i++) {
+				checkboxList.get(i).setSelected(checkboxState[i]);
+			}
+			sqr.stop();
+			buildTrackAndStart();
+		}
+	}
+}
